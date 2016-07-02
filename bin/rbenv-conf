@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+#
+# Summary: Add/remove a config file using the php-config plugin
+#
+# Usage: phpenv conf add <file-path>  #add config to phpenv config dir
+#        phpenv conf rm <conf>        #remove config from config and available dir
+#        phpenv conf en[able] <conf>  #enable config by symlinking from available dir
+#        phpenv conf dis[able] <conf> #disable config by removing enabled symlink
+#        phpenv conf ls|list          #list both enabled and available configs
+#        phpenv conf version          #show version of php-congig
+#
+# Homepage: https://github.com/src-run/php-config
+#
+
+set -e
+
+[ -n "$PHPENV_DEBUG" ] && RBENV_DEBUG=1
+[ -n "$RBENV_DEBUG" ] && set -x
+
+PHPCONF_VERSION="0.5.0"
+
+usage() {
+  exec rbenv-help conf
+  [ -z "$1" ] || exit "$1"
+}
+
+configs_enabled() {
+  ls -1 "${PHP_CONFIG_PHPV_CONF}/" 2> /dev/null | path_basename | sort
+}
+
+configs_available() {
+  ls -1 "${PHP_CONFIG_PHPV_CONF_AVAIL}/" 2> /dev/null | path_basename | sort
+}
+
+path_basename() {
+  xargs -n1 -i basename {} ".ini" 2> /dev/null
+}
+
+indent() {
+  sed 's/^/  /'
+}
+
+configs_mkdir() {
+  require_dir_exists "$PHP_CONFIG_PHPV_CONF"
+  require_dir_exists "$PHP_CONFIG_PHPV_CONF_AVAIL"
+}
+
+require_dir_exists() {
+  local dir="$1"
+  if [[ ! -d "$dir" ]]; then
+    mkdir -p "$dir"
+  fi
+}
+
+action_ver() {
+  echo "php-conf v${PHPCONF_VERSION}"
+  exit 0
+}
+
+action_add() {
+  local filepath="$1"
+
+  if [[ ! -f "$filepath" ]]; then
+    echo "Invalid file path provided"
+    exit 1
+  fi
+
+  local basename="`basename \"$filepath\" .ini`"
+
+  cp "$filepath" "${PHP_CONFIG_PHPV_CONF_AVAIL}/${basename}.ini"
+  echo "Added \"$basename\" to available config"
+}
+
+action_enable() {
+  local conf="$1"
+  local file="${PHP_CONFIG_PHPV_CONF_AVAIL}/$1.ini"
+  local new="${PHP_CONFIG_PHPV_CONF}/$1.ini"
+
+  if [[ ! -f "$file" ]]; then
+    echo "Invalid config: \"$conf\""
+    exit
+  fi
+
+  if [[ -f "$new" ]]; then
+    echo "Already enabled: \"$conf\""
+    exit
+  fi
+
+  ln -s "$file" "$new"
+  echo "Enabled config: \"$conf\""
+}
+
+action_disable() {
+  local conf="$1"
+  local file="${PHP_CONFIG_PHPV_CONF}/$1.ini"
+
+  if [[ ! -f "$file" ]]; then
+    echo "Invalid config: \"$conf\""
+    exit
+  fi
+
+  rm "$file"
+  echo "Disabled config: \"$conf\""
+}
+
+action_rm() {
+  local conf="$1"
+  local av="${PHP_CONFIG_PHPV_CONF_AVAIL}/$1.ini"
+  local en="${PHP_CONFIG_PHPV_CONF}/$1.ini"
+
+  if [[ ! -f "$av" ]]; then
+    echo "Invalid config: \"$conf\""
+    exit
+  fi
+
+  if [[ -f "$en" ]]; then
+    rm "$en"
+  fi
+
+  rm "$av"
+  echo "Removed config: \"$conf\""
+}
+
+ls_enabled() {
+  for f in `configs_available`; do
+    if [[ -f "${PHP_CONFIG_PHPV_CONF}/$f.ini" ]]; then
+      echo "$f"
+    fi
+  done
+}
+
+ls_available() {
+  for f in `configs_available`; do
+    if [[ ! -f "${PHP_CONFIG_PHPV_CONF}/$f.ini" ]]; then
+      echo "$f"
+    fi
+  done
+}
+
+action_ls() {
+  echo "Config enabled ($(ls_enabled | wc -l) files):"
+  ls_enabled | indent
+  echo "Config available ($(ls_available | wc -l) files):"
+  ls_available | indent
+  exit
+}
+
+require_arg() {
+  if [[ "$1" == "" ]]; then
+    echo "Missing command line argument"
+    echo
+    usage 0
+  fi
+}
+
+if [ -z "$RBENV_ROOT" ]; then
+  RBENV_ROOT="$(phpenv root)"
+fi
+
+PHP_CONFIG_PHPV="$(phpenv version-name)"
+PHP_CONFIG_PHPV_ROOT="${RBENV_ROOT}/versions/${PHP_CONFIG_PHPV}"
+PHP_CONFIG_PHPV_CONF="${PHP_CONFIG_PHPV_ROOT}/etc/conf.d/"
+PHP_CONFIG_PHPV_CONF_AVAIL="${PHP_CONFIG_PHPV_ROOT}/etc/conf.d-available/"
+
+# provide rbenv completions
+if [ "$1" = "--complete" ]; then
+  case "$2" in
+    add|ls|--add|--ls|list|--list)
+      exit
+      ;;
+    rm|--rm)
+      configs_available
+      ;;
+    enable|--enable|en|--en)
+      for f in `configs_available`; do
+        if [[ ! -f "${PHP_CONFIG_PHPV_CONF}/$f.ini" ]]; then
+          echo "$f"
+        fi
+      done
+      ;;
+    disable|--disable|dis|--dis)
+      configs_enabled
+      ;;
+    *)
+      echo add
+      echo rm
+      echo enable
+      echo disable
+      echo ls
+      echo version
+    ;;
+  esac
+  exit
+fi
+
+# Don't edit system config files
+if [[ "$PHP_CONFIG_PHPV" == "system" ]]; then
+  echo "Editing config of system version not supported"
+  exit 1
+fi
+
+configs_mkdir
+
+if [[ -z $1 ]]; then
+  usage 0
+fi
+
+for opt in "$@"; do
+  if [[ "$opt" == "--help" ]] || [[ "$opt" == "-h" ]] || [[ "$opt" == "help" ]]; then
+    usage 0
+  fi
+done
+
+action=$1 && shift
+case "$action" in
+  add|--add)
+    require_arg "$1"
+    action_add "$1"
+    exit
+    ;;
+  rm|--rm)
+    require_arg "$1"
+    action_rm "$1"
+    exit
+    ;;
+  enable|--enable|en|--en)
+    require_arg "$1"
+    action_enable "$1"
+    exit
+    ;;
+  disable|--disable|dis|--dis)
+    require_arg "$1"
+    action_disable "$1"
+    exit
+    ;;
+  ls|--ls|list|--list)
+    action_ls
+    exit
+    ;;
+  version|--version)
+    action_ver
+    exit
+    ;;
+  *)
+    usage 0
+    ;;
+esac
