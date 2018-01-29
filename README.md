@@ -31,28 +31,28 @@ phpenv conf [OPTION] [<cfgini|extini|extname|conf>]
 
 ```bash
 #add local general-purpose config ini file (ex.: defining timezone)
-phpenv conf -c|--cfg-add <cfg-ini> 
+phpenv conf -c|--cfg-add <cfg-file>
 
 #add a local extension config ini file (ex.: igbinary.ini, tidy.ini, etc)
-phpenv conf -x|--ext-add <ext-ini>
+phpenv conf -x|--ext-add <ext-file>
 
-#create new extension config file containing "extension=<extname>.so" 
+#create new extension config file from name (containing "extension=<extname>.so")
 phpenv conf -X|--ext-new <ext-name>
 
-#remove config completely (from active config and available config dirs)
-phpenv conf -r|--rm <conf.ini>
+#remove installed config completely (from active config and available config dirs)
+phpenv conf -r|--rm <cfg-name>
 
-#enable config (by symlinking from available dir)
-phpenv conf -e|--enable <conf>
+#enable installed config (by symlinking from available dir)
+phpenv conf -e|--enable <cfg-name>
 
-#disable config (by removing enabled symlink)
-phpenv conf -d|--disable <conf>
+#disable installed config (by removing enabled symlink)
+phpenv conf -d|--disable <cfg-name>
 
 #list both enabled and disabled configs 
 phpenv conf -l|--list
 
-#display the file contents of a config file
-phpenv conf -s|--show <conf>
+#display installed config file contents
+phpenv conf -s|--show <cfg-name>
 
 #show version of php-congig (including current git hash)
 phpenv conf -V|--version
