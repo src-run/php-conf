@@ -1,1 +1,450 @@
-rbenv-conf
+#!/usr/bin/env bash
+#
+# Summary: Add/remove a config file using the php-config plugin
+#
+# Description: 
+#        PHPEnv plug-in providing PHP configuration (ini) management commands. On first invocation
+#        a conf.d-available/ path is created parallel to the original conf.d/, which provides the
+#        this script its default ini install path when calling --[cfg|ext]-add. Actually enabling
+#        the ini file is done by calling -e, symlinking the file from conf.d-available/ into conf.d/.
+#        This lays the groundwork for this command.
+#
+# Usage:
+#        phpenv conf [OPTION] [<cfgini|extini|extname|conf>]
+#
+# Options:
+#        #add general-purpose config ini file (ex.: defining timezone)
+#        phpenv conf -c|--cfg-add <cfgini> 
+#
+#        #add an extension config ini file (ex.: igbinary, tidy, etc)
+#        phpenv conf -x|--ext-add <extini>
+#
+#        #create new extension config file containing "extension=<extname>.so" 
+#        phpenv conf -X|--ext-new <extname>
+#
+#        #remove config from config and available dir
+#        phpenv conf -r|--rm <conf>
+#
+#        #enable config by symlinking from available dir
+#        phpenv conf -e|--enable <conf>
+#
+#        #disable config by removing enabled symlink
+#        phpenv conf -d|--disable <conf>
+#
+#        #list both enabled and disabled (available) configs 
+#        phpenv conf -l|--list
+#
+#        #display the file contents of a config file
+#        phpenv conf -s|--show <conf>
+
+#        #show version of php-congig (including current git hash)
+#        phpenv conf -V|--version
+#
+#        #display help dialoge message (in fact, this message you'r reading here!)
+#        phpenv conf -h|--help|help
+#
+
+set -e
+
+[ -n "$PHPENV_DEBUG" ] && PHPENV_DEBUG=1
+[ -n "$PHPENV_DEBUG" ] && set -x
+
+PHPCONF_VERSION="0.5.0"
+
+configs_enabled() {
+  ls -1 "${PHP_CONFIG_PHPV_CONF}/" 2> /dev/null | path_basename | sort
+}
+
+configs_available() {
+  ls -1 "${PHP_CONFIG_PHPV_CONF_AVAIL}/" 2> /dev/null | path_basename | sort
+}
+
+path_basename() {
+  xargs -n1 -i basename {} ".ini" 2> /dev/null
+}
+
+indent() {
+  sed 's/^/  /'
+}
+
+INDENT_CONTENTS_I=1
+indent_contents() {
+  sed "s/^/[${1}:${INDENT_CONTENTS_I}] = /"
+  INDENT_CONTENTS_I=$((( ${INDENT_CONTENTS_I} + 1)))
+}
+
+out_err() {
+  echo -e "Error: $1"
+}
+
+has_req_arg() {
+  if [[ "$1" == "" ]]; then
+    out_err "Missing required argument for command!"
+    do_exit
+  fi
+}
+
+ls_av() {
+  ls -1 "${PHP_CONFIG_PHPV_CONF_AVAIL}/" 2> /dev/null | path_basename | sort
+}
+
+ls_en() {
+  ls -1 "${PHP_CONFIG_PHPV_CONF}/" 2> /dev/null | path_basename | sort
+}
+
+ls_di() {
+  for f in `ls_av`; do
+    [[ ! -f "`get_path_en $f`" ]] && echo "$f"
+  done
+}
+
+is_php_ver_ok() {
+  if [[ "$PHP_CONFIG_PHPV" == "system" ]]; then
+    echo -n "Currently enabled version (\"system\") is not supported by this tool for configuration management. "
+    echo -n "Before you can use this tool, you must enable a PhpEnv-installed PHP version using \"phpenv global <ver>\". "
+    echo "Installed PHP versions:"
+    exec phpenv-versions
+    exit 255
+  fi
+}
+
+is_dir_or_make() {
+  [[ -d "$1" ]] || mkdir -p "$1"
+}
+
+get_path_av() {
+  echo -n "${PHP_CONFIG_PHPV_CONF_AVAIL}/"
+  [[ -n "$2" ]] && echo -n "$2-"
+  echo "$1.ini"
+}
+
+get_path_en() {
+  echo -n "${PHP_CONFIG_PHPV_CONF}/"
+  [[ -n "$2" ]] && echo -n "$2-"
+  echo "$1.ini"
+}
+
+get_basename() {
+  echo `basename "$(basename "$1" .ini)" .so`
+}
+
+get_git_name() {
+  git --git-dir="`cd $(dirname ${BASH_SOURCE[0]}) && pwd`/../.git/" remote -v |\
+    grep -o -P '[a-z0-9-]+/[a-z0-9-]+\.git' | rev | cut -c 5- | rev | head -n 1
+}
+
+get_git_hash() {
+  git --git-dir="`cd $(dirname ${BASH_SOURCE[0]}) && pwd`/../.git/" rev-parse HEAD
+}
+
+do_completions() {
+  local cmds="-c --cfg-add -x --ext-add -X --ext-new -r --rm -e --enable -d --disable -s --show -l --list -h --help"
+  for c in $cmds; do echo $c; done
+}
+
+do_completions_en() {
+  ls_di
+}
+
+do_completions_dis() {
+  ls_en
+}
+
+do_completions_rm() {
+  ls_av
+}
+
+do_exit() {
+  if [ -n "$1" ]; then
+    exit $1
+  fi
+  exit 0
+}
+
+do_init() {
+  is_php_ver_ok
+
+  is_dir_or_make "$PHP_CONFIG_PHPV_CONF"
+  is_dir_or_make "$PHP_CONFIG_PHPV_CONF_AVAIL"
+
+  [[ -z $1 ]] && do_usage 0
+
+  for opt in "$@"; do
+    case "$opt" in
+      --help|-h)
+        do_usage 0
+        ;;
+    esac
+  done
+}
+
+do_usage() {
+  exec phpenv-help conf
+  [ -z "$1" ] || do_exit "$1"
+}
+
+do_ver() {
+  echo "[`get_git_name` v${PHPCONF_VERSION}] (git@`get_git_hash`)"
+  do_exit
+}
+
+do_cfg_en() {
+  has_req_arg $1
+
+  local name="`get_basename "$1"`"
+  local path_av="`get_path_av $name`"
+  local path_en="`get_path_en $name`"
+
+  if [[ ! -f "$path_av" ]]; then
+    out_err "Invalid configuration name @ `basename $path_av`."
+    do_exit 1
+  fi
+
+  if [[ -L "$path_en" ]]; then
+    echo "Ignoring already enabled configuration @ `basename $path_en`."
+    do_exit 1
+  fi
+
+  ln -s "$path_av" "$path_en"
+  echo "Enabled ini configuration @ `basename $path_av`."
+
+  do_exit
+}
+
+do_cfg_add() {
+  has_req_arg $1
+
+  local from="$1"
+  local name="`get_basename "$1" cfg`"
+  local path_av="`get_path_av $name cfg`"
+
+  if [[ ! -f "$from" ]]; then
+    out_err "Invalid configuration path @ $from."
+    do_exit 1
+  fi
+
+  cp "$from" "$path_av"
+
+  echo "Added new configuration file @ `basename $path_av` ($from)."
+
+  do_exit
+}
+
+do_ext_add() {
+  has_req_arg $1
+
+  local from="$1"
+  local name="`get_basename "$1" ext`"
+  local path_av="`get_path_av $name ext`"
+
+  if [[ ! -f "$from" ]]; then
+    out_err "Invalid configuration path @ $from."
+    do_exit 1
+  fi
+
+  cp "$from" "$path_av"
+
+  echo "Added new configuration file @ `basename $path_av` ($from)."
+
+  do_exit
+}
+
+do_cfg_dis() {
+  has_req_arg $1
+
+  local name="`get_basename "$1"`"
+  local path_av="`get_path_av $name`"
+  local path_en="`get_path_en $name`"
+
+  if [[ ! -f "$path_en" ]]; then
+    out_err "Invalid configuration name @ `basename $path_en`."
+    do_exit 1
+  fi
+
+  if [[ ! -L "$path_en" ]] && [[ ! -f "$path_av" ]]; then
+    mv "$path_en" "$path_av"
+  else
+    rm "$path_en"
+  fi
+
+  echo "Disabled ini configuration @ `basename $path_av`."
+
+  do_exit
+}
+
+do_rm() {
+  has_req_arg $1
+
+  local name="`get_basename "$1"`"
+  local path_av="`get_path_av $name`"
+  local path_en="`get_path_en $name`"
+
+  if [[ ! -f "$path_av" ]]; then
+    out_err "Invalid configuration name @ `basename $path_av`."
+    do_exit 1
+  fi
+
+  if [[ -f "$path_en" ]]; then
+    rm "$path_en"
+  fi
+
+  rm "$path_av"
+
+  echo "Disabled/removed ini configuration @ `basename $path_av`."
+
+  do_exit
+}
+
+do_ext_new() {
+  has_req_arg $1
+
+  local name="`get_basename "$1"`"
+  local path="`get_path_av $name ext`"
+  local text="extension=$name.so"
+
+  echo "$text" > "$path"
+  echo "Created extension configuration @ `basename $path` ($text)."
+
+  do_exit
+}
+
+do_ls() {
+  local num_en=$(ls_en | wc -l)
+  local num_di=$(ls_di | wc -l)
+
+  echo "Configuration enabled ($num_en files):"
+  [[ $num_en -eq 0 ]] && echo "<none>" | indent
+  ls_en | indent
+
+  echo "Configuration disabled ($num_di files):"
+  [[ $num_di -eq 0 ]] && echo "<none>" | indent
+  ls_di | indent
+
+  do_exit
+}
+
+do_show() {
+  has_req_arg $1
+
+  local name="`get_basename "$1"`"
+  local path="`get_path_av $name`"
+
+  if [[ ! -f "$path" ]]; then
+    out_err "Invalid configuration name @ `basename $path`."
+    do_exit 1
+  fi
+
+  cat $path | indent_contents "$name"
+  echo
+
+  do_exit
+}
+
+action_add() {
+  has_req_arg
+  local filepath="$1"
+
+  if [[ ! -f "$filepath" ]]; then
+    echo "Invalid file path provided"
+    exit 1
+  fi
+
+  local basename="`basename \"$filepath\" .ini`"
+
+  cp "$filepath" "${PHP_CONFIG_PHPV_CONF_AVAIL}/${basename}.ini"
+  echo "Added \"$basename\" to available config"
+}
+
+# get phpenv root dirpath
+if [ -z "$PHPENV_ROOT" ]; then
+  PHPENV_ROOT="$(phpenv root)"
+fi
+
+# configure required paths
+PHP_CONFIG_PHPV="$(phpenv version-name)"
+PHP_CONFIG_PHPV_ROOT="${PHPENV_ROOT}/versions/${PHP_CONFIG_PHPV}"
+PHP_CONFIG_PHPV_CONF="${PHP_CONFIG_PHPV_ROOT}/etc/conf.d/"
+PHP_CONFIG_PHPV_CONF_AVAIL="${PHP_CONFIG_PHPV_ROOT}/etc/conf.d-available/"
+
+# provide phpenv completions
+if [ "$1" = "--complete" ]; then
+  case "$2" in
+    --cfg-add|-c|--ext-add|-x|--ext-new|-X|--list|-l)
+      do_exit
+      ;;
+
+    -r|--rm|-s|--show)
+      do_completions_rm
+      ;;
+
+    -e|--enable)
+      do_completions_en
+      ;;
+
+    -d|--disable)
+      do_completions_dis
+      ;;
+
+    *)
+      do_completions
+      ;;
+  esac
+
+  do_exit
+fi
+
+# initialize environment
+do_init $@
+
+action=$1 && shift
+
+case "$action" in
+  -c|--cfg-add)
+    do_cfg_add "$1"
+    exit
+    ;;
+
+  -x|--ext-add)
+    do_ext_add "$1"
+    exit
+    ;;
+
+  -X|--ext-new)
+    do_ext_new "$1"
+    exit
+    ;;
+
+  -r|--rm)
+    do_rm "$1"
+    exit
+    ;;
+
+  -e|--en|--enable)
+    do_cfg_en "$1"
+    exit
+    ;;
+
+  -d|--dis|--disable)
+    do_cfg_dis "$1"
+    exit
+    ;;
+
+  -l|--list)
+    do_ls
+    exit
+    ;;
+
+  -s|--show)
+    do_show "$1"
+    exit
+    ;;
+
+  -V|--version)
+    do_ver
+    exit
+    ;;
+
+  *)
+    do_usage
+    ;;
+esac
