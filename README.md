@@ -30,25 +30,25 @@ phpenv conf [OPTION] [<cfgini|extini|extname|conf>]
 ### CLI Options
 
 ```bash
-#add general-purpose config ini file (ex.: defining timezone)
-phpenv conf -c|--cfg-add <cfgini> 
+#add local general-purpose config ini file (ex.: defining timezone)
+phpenv conf -c|--cfg-add <cfg-ini> 
 
-#add an extension config ini file (ex.: igbinary, tidy, etc)
-phpenv conf -x|--ext-add <extini>
+#add a local extension config ini file (ex.: igbinary.ini, tidy.ini, etc)
+phpenv conf -x|--ext-add <ext-ini>
 
 #create new extension config file containing "extension=<extname>.so" 
-phpenv conf -X|--ext-new <extname>
+phpenv conf -X|--ext-new <ext-name>
 
-#remove config from config and available dir
-phpenv conf -r|--rm <conf>
+#remove config completely (from active config and available config dirs)
+phpenv conf -r|--rm <conf.ini>
 
-#enable config by symlinking from available dir
+#enable config (by symlinking from available dir)
 phpenv conf -e|--enable <conf>
 
-#disable config by removing enabled symlink
+#disable config (by removing enabled symlink)
 phpenv conf -d|--disable <conf>
 
-#list both enabled and disabled (available) configs 
+#list both enabled and disabled configs 
 phpenv conf -l|--list
 
 #display the file contents of a config file
